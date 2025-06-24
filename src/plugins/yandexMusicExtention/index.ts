@@ -10,7 +10,7 @@ import definePlugin from "@utils/types";
 
 // Константы для OAuth Яндекс
 const YANDEX_OAUTH_CLIENT_ID = "ВАШ_РЕАЛЬНЫЙ_CLIENT_ID"; // Замените на реальный ID
-const YANDEX_OAUTH_REDIRECT_URI = "https://raw.githubusercontent.com/VACRandomSample/VencordYMusicExtention/refs/heads/main/src/plugins/yandexMusicExtention/dummy-oauth.html"; // ИЛИ для локальной разработки: "http://localhost:8080/dummy-oauth.html"
+const YANDEX_OAUTH_REDIRECT_URI = "https://raw.githubusercontent.com/VACRandomSample/VencordYMusicExtention/refs/heads/main/src/plugins/yandexMusicExtention/dummy-oauth.html";
 
 export default definePlugin({
     name: "Yandex Music",

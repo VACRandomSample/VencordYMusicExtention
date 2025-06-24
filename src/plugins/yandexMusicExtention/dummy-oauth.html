@@ -1,13 +1,139 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru">
     <head>
-        <meta charset="utf-8" />
-        <title>OAuth Redirect</title>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Авторизация Яндекс.Музыки</title>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+                font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+            }
+
+            body {
+                background: linear-gradient(135deg, #1a1a2e, #16213e);
+                height: 100vh;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                color: #fff;
+            }
+
+            .container {
+                background: rgba(255, 255, 255, 0.1);
+                backdrop-filter: blur(10px);
+                border-radius: 16px;
+                padding: 30px;
+                width: 90%;
+                max-width: 500px;
+                text-align: center;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+                border: 1px solid rgba(255, 255, 255, 0.18);
+            }
+
+            .logo {
+                width: 80px;
+                height: 80px;
+                margin: 0 auto 20px;
+                background: linear-gradient(135deg, #ff4e50, #f9d423);
+                border-radius: 50%;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                font-size: 40px;
+                font-weight: bold;
+                color: #fff;
+            }
+
+            h1 {
+                font-size: 24px;
+                margin-bottom: 20px;
+                color: #f9d423;
+                text-shadow: 0 0 10px rgba(249, 212, 35, 0.5);
+            }
+
+            .status {
+                font-size: 18px;
+                margin: 20px 0;
+                padding: 15px;
+                background: rgba(0, 0, 0, 0.2);
+                border-radius: 8px;
+            }
+
+            .success {
+                color: #4ade80;
+            }
+
+            .error {
+                color: #f87171;
+            }
+
+            .loader {
+                width: 50px;
+                height: 50px;
+                border: 5px solid rgba(255, 255, 255, 0.3);
+                border-top: 5px solid #f9d423;
+                border-radius: 50%;
+                margin: 20px auto;
+                animation: spin 1s linear infinite;
+            }
+
+            @keyframes spin {
+                0% {
+                    transform: rotate(0deg);
+                }
+                100% {
+                    transform: rotate(360deg);
+                }
+            }
+
+            .info {
+                margin-top: 25px;
+                font-size: 14px;
+                color: #a0aec0;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="logo">YM</div>
+            <h1>Интеграция Яндекс.Музыки</h1>
+
+            <div class="status" id="status">
+                <p>Идет обработка авторизации...</p>
+                <div class="loader"></div>
+            </div>
+
+            <div class="info">
+                <p>
+                    Если окно не закрылось автоматически, закройте его вручную
+                </p>
+                <p>Вы будете перенаправлены обратно в приложение</p>
+            </div>
+        </div>
+
         <script>
             // Извлекаем токен из URL
             const hash = window.location.hash.substring(1);
             const params = new URLSearchParams(hash);
             const token = params.get("access_token");
+            const error = params.get("error");
+            const errorDescription = params.get("error_description");
+
+            const statusEl = document.getElementById("status");
+
+            function updateStatus(message, isSuccess = true) {
+                statusEl.innerHTML = `
+                <p class="${isSuccess ? "success" : "error"}">${message}</p>
+                <p>Окно закроется через 3 секунды...</p>
+            `;
+
+                setTimeout(() => {
+                    window.close();
+                }, 3000);
+            }
 
             if (token) {
                 // Отправляем токен в родительское окно
@@ -18,10 +144,9 @@
                     },
                     "*"
                 );
-            } else {
+                updateStatus("✅ Авторизация успешно завершена!");
+            } else if (error) {
                 // Если ошибка
-                const error = params.get("error");
-                const errorDescription = params.get("error_description");
                 window.opener.postMessage(
                     {
                         type: "yandex-oauth-error",
@@ -30,11 +155,13 @@
                     },
                     "*"
                 );
+                updateStatus(
+                    `❌ Ошибка авторизации: ${errorDescription || error}`,
+                    false
+                );
+            } else {
+                updateStatus("⚠️ Не удалось получить токен авторизации", false);
             }
-            window.close();
         </script>
-    </head>
-    <body>
-        <p>Пожалуйста, подождите...</p>
     </body>
 </html>
