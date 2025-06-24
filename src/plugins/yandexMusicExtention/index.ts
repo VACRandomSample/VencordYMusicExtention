@@ -5,12 +5,27 @@
  */
 
 import { DataStore } from "@api/index";
+import { definePluginSettings } from "@api/Settings";
 import { Devs } from "@utils/constants";
-import definePlugin from "@utils/types";
+import definePlugin, { OptionType } from "@utils/types";
 
-// Константы для OAuth Яндекс
-const YANDEX_OAUTH_CLIENT_ID = "ВАШ_РЕАЛЬНЫЙ_CLIENT_ID"; // Замените на реальный ID
-const YANDEX_OAUTH_REDIRECT_URI = "https://raw.githubusercontent.com/VACRandomSample/VencordYMusicExtention/refs/heads/main/src/plugins/yandexMusicExtention/dummy-oauth.html";
+// Настройки плагина
+const settings = definePluginSettings({
+    clientId: {
+        type: OptionType.STRING,
+        description: "Yandex OAuth Client ID",
+        default: "",
+        restartNeeded: true,
+        onChange: newValue => console.log("Client ID changed to:", newValue),
+    },
+    redirectUri: {
+        type: OptionType.STRING,
+        description: "Redirect URI",
+        default: "https://raw.githubusercontent.com/.../dummy-oauth.html",
+        restartNeeded: true,
+        onChange: newValue => console.log("Redirect URI changed to:", newValue),
+    }
+});
 
 export default definePlugin({
     name: "Yandex Music",
@@ -23,6 +38,8 @@ export default definePlugin({
 
     // Добавляем поле observer
     observer: null as MutationObserver | null,
+
+    settings,
 
     start() {
         // Добавляем задержку для безопасной инициализации
@@ -306,6 +323,13 @@ export default definePlugin({
     },
 
     authorize() {
+        const { clientId, redirectUri } = settings.store;
+
+        if (!clientId) {
+            alert("Пожалуйста, укажите Client ID в настройках плагина!");
+            return;
+        }
+
         const messageHandler = (event: MessageEvent) => {
             if (event.data.type === "yandex-oauth-error") {
                 alert(`Ошибка авторизации: ${event.data.error}`);
@@ -324,21 +348,10 @@ export default definePlugin({
 
         // Открываем окно авторизации
         const authWindow = window.open(
-            `https://oauth.yandex.ru/authorize?response_type=token&client_id=${YANDEX_OAUTH_CLIENT_ID}&redirect_uri=${encodeURIComponent(YANDEX_OAUTH_REDIRECT_URI)}`,
+            `https://oauth.yandex.ru/authorize?response_type=token&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}`,
             "yandexAuth",
             "width=600,height=700"
         );
-    },
-
-    checkAuthResult() {
-        // Этот метод должен обрабатывать реальный токен
-        // В реальном приложении токен будет получен через redirect_uri
-        // Для примера оставим тестовый токен
-        this.saveToken("test_token");
-
-        // Пересоздадим элемент, чтобы обновить интерфейс
-        document.querySelectorAll(".quest-bar-mod-container").forEach(el => el.remove());
-        this.injectElement();
     },
 
     stop() {
