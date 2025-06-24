@@ -21,7 +21,7 @@ const settings = definePluginSettings({
     redirectUri: {
         type: OptionType.STRING,
         description: "Redirect URI",
-        default: "https://raw.githubusercontent.com/.../dummy-oauth.html",
+        default: "vencord-yandex://oauth",
         restartNeeded: true,
         onChange: newValue => console.log("Redirect URI changed to:", newValue),
     }
@@ -42,12 +42,44 @@ export default definePlugin({
     settings,
 
     start() {
-        // Добавляем задержку для безопасной инициализации
+        // Регистрируем обработчик кастомного протокола
+        window.vencordDesktop?.ipc.invoke("REGISTER_PROTOCOL", "vencord-yandex");
+        window.vencordDesktop?.ipc.on("protocol", (_, url) => {
+            console.log("Received protocol URL:", url);
+            this.handleProtocol(url);
+        });
+
         setTimeout(() => {
             this.loadToken();
             this.injectElement();
             this.addStyles();
         }, 1000);
+    },
+
+    handleProtocol(url: string) {
+        console.log("Handling protocol URL:", url);
+
+        // Исправляем парсинг URL для кастомного протокола
+        const fixedUrl = url.replace("vencord-yandex://", "http://dummy/");
+        const parsedUrl = new URL(fixedUrl);
+
+        if (parsedUrl.pathname === "/oauth") {
+            const hash = parsedUrl.hash.substring(1);
+            const params = new URLSearchParams(hash);
+            const token = params.get("access_token");
+
+            if (token) {
+                console.log("Received access token");
+                this.saveToken(token);
+                this.isAuthorized = true;
+                document.querySelectorAll(".quest-bar-mod-container").forEach(el => el.remove());
+                this.injectElement();
+            } else {
+                const error = params.get("error");
+                console.error("Authorization error:", error);
+                alert(`Ошибка авторизации: ${error}`);
+            }
+        }
     },
 
     async loadToken() {
@@ -330,25 +362,13 @@ export default definePlugin({
             return;
         }
 
-        const messageHandler = (event: MessageEvent) => {
-            if (event.data.type === "yandex-oauth-error") {
-                alert(`Ошибка авторизации: ${event.data.error}`);
-                window.removeEventListener("message", messageHandler);
-            }
-            if (event.origin !== "https://oauth.yandex.ru") return;
-
-            if (event.data.type === "yandex-oauth" && event.data.token) {
-                this.saveToken(event.data.token);
-                document.querySelectorAll(".quest-bar-mod-container").forEach(el => el.remove());
-                this.injectElement();
-                window.removeEventListener("message", messageHandler);
-            }
-        };
-        window.addEventListener("message", messageHandler);
+        // Добавляем параметр force_confirm=yes для тестирования
+        const authUrl = `https://oauth.yandex.ru/authorize?response_type=token&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&force_confirm=yes`;
+        console.log("Opening auth URL:", authUrl);
 
         // Открываем окно авторизации
-        const authWindow = window.open(
-            `https://oauth.yandex.ru/authorize?response_type=token&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}`,
+        window.open(
+            authUrl,
             "yandexAuth",
             "width=600,height=700"
         );
