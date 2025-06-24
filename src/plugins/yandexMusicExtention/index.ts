@@ -9,8 +9,8 @@ import { Devs } from "@utils/constants";
 import definePlugin from "@utils/types";
 
 // Константы для OAuth Яндекс
-const YANDEX_OAUTH_CLIENT_ID = "ваш_реальный_client_id"; // Замените на реальный ID
-const YANDEX_OAUTH_REDIRECT_URI = "https://vencord.github.io/dummy-oauth.html";
+const YANDEX_OAUTH_CLIENT_ID = "ВАШ_РЕАЛЬНЫЙ_CLIENT_ID"; // Замените на реальный ID
+const YANDEX_OAUTH_REDIRECT_URI = "https://ваш-сайт.com/dummy-oauth.html"; // ИЛИ для локальной разработки: "http://localhost:8080/dummy-oauth.html"
 
 export default definePlugin({
     name: "Yandex Music",
@@ -295,12 +295,6 @@ export default definePlugin({
                             this.authorize();
                         });
                     }
-                }
-
-                // Добавляем проверку на существование useMemo
-                if (typeof useMemo === "undefined") {
-                    console.warn("React.useMemo is not available");
-                    return;
                 }
             }
         });

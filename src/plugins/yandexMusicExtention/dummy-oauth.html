@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <title>OAuth Redirect</title>
+        <script>
+            // Извлекаем токен из URL
+            const hash = window.location.hash.substring(1);
+            const params = new URLSearchParams(hash);
+            const token = params.get("access_token");
+
+            if (token) {
+                // Отправляем токен в родительское окно
+                window.opener.postMessage(
+                    {
+                        type: "yandex-oauth",
+                        token: token,
+                    },
+                    "*"
+                );
+            } else {
+                // Если ошибка
+                const error = params.get("error");
+                const errorDescription = params.get("error_description");
+                window.opener.postMessage(
+                    {
+                        type: "yandex-oauth-error",
+                        error: error || "Unknown error",
+                        errorDescription: errorDescription,
+                    },
+                    "*"
+                );
+            }
+            window.close();
+        </script>
+    </head>
+    <body>
+        <p>Пожалуйста, подождите...</p>
+    </body>
+</html>
