@@ -11,19 +11,18 @@ import definePlugin, { OptionType } from "@utils/types";
 
 // Настройки плагина
 const settings = definePluginSettings({
-    clientId: {
-        type: OptionType.STRING,
-        description: "Yandex OAuth Client ID",
-        default: "",
-        restartNeeded: true,
-        onChange: newValue => console.log("Client ID changed to:", newValue),
+    serverPort: {
+        type: OptionType.NUMBER,
+        description: "Порт OAuth сервера",
+        default: 3000,
+        restartNeeded: false,
     },
     redirectUri: {
         type: OptionType.STRING,
-        description: "Redirect URI",
-        default: "vencord-yandex://oauth",
-        restartNeeded: true,
-        onChange: newValue => console.log("Redirect URI changed to:", newValue),
+        description: "Redirect URI (информационно, настраивается в сервере)",
+        default: "http://localhost:3000/oauth/callback",
+        restartNeeded: false,
+        disabled: true,
     }
 });
 
@@ -42,11 +41,12 @@ export default definePlugin({
     settings,
 
     start() {
-        // Регистрируем обработчик кастомного протокола
-        window.vencordDesktop?.ipc.invoke("REGISTER_PROTOCOL", "vencord-yandex");
-        window.vencordDesktop?.ipc.on("protocol", (_, url) => {
-            console.log("Received protocol URL:", url);
-            this.handleProtocol(url);
+        // Добавляем слушатель сообщений от OAuth сервера
+        window.addEventListener("message", event => {
+            if (event.data.type === "YANDEX_OAUTH_SUCCESS") {
+                console.log("✅ Получен токен от OAuth сервера");
+                this.handleOAuthSuccess(event.data.token, event.data.user);
+            }
         });
 
         setTimeout(() => {
@@ -56,30 +56,36 @@ export default definePlugin({
         }, 1000);
     },
 
-    handleProtocol(url: string) {
-        console.log("Handling protocol URL:", url);
+    handleOAuthSuccess(token: string, user: any) {
+        console.log("👤 Авторизация завершена для пользователя:", user.login || user.real_name);
 
-        // Исправляем парсинг URL для кастомного протокола
-        const fixedUrl = url.replace("vencord-yandex://", "http://dummy/");
-        const parsedUrl = new URL(fixedUrl);
+        this.saveToken(token);
+        this.isAuthorized = true;
 
-        if (parsedUrl.pathname === "/oauth") {
-            const hash = parsedUrl.hash.substring(1);
-            const params = new URLSearchParams(hash);
-            const token = params.get("access_token");
+        // Обновляем UI
+        document.querySelectorAll(".quest-bar-mod-container").forEach(el => el.remove());
+        this.injectElement();
 
-            if (token) {
-                console.log("Received access token");
-                this.saveToken(token);
-                this.isAuthorized = true;
-                document.querySelectorAll(".quest-bar-mod-container").forEach(el => el.remove());
-                this.injectElement();
-            } else {
-                const error = params.get("error");
-                console.error("Authorization error:", error);
-                alert(`Ошибка авторизации: ${error}`);
-            }
-        }
+        // Показываем уведомление об успешной авторизации
+        const notification = document.createElement("div");
+        notification.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #4CAF50;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            z-index: 10000;
+            font-family: Arial, sans-serif;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        `;
+        notification.textContent = `✅ Авторизация успешна! Добро пожаловать, ${user.real_name || user.login}`;
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+            notification.remove();
+        }, 5000);
     },
 
     async loadToken() {
@@ -344,6 +350,20 @@ export default definePlugin({
                             this.authorize();
                         });
                     }
+
+                    // Добавляем кнопку для ручного ввода токена
+                    const manualTokenButton = document.createElement("button");
+                    manualTokenButton.className = "auth-button";
+                    manualTokenButton.id = "yandex-manual-token";
+                    manualTokenButton.style.marginTop = "5px";
+                    manualTokenButton.style.background = "#4CAF50";
+                    manualTokenButton.textContent = "Ввести токен вручную";
+
+                    manualTokenButton.addEventListener("click", () => {
+                        this.showManualTokenInput();
+                    });
+
+                    expandedContent.appendChild(manualTokenButton);
                 }
             }
         });
@@ -355,23 +375,249 @@ export default definePlugin({
     },
 
     authorize() {
-        const { clientId, redirectUri } = settings.store;
+        const { serverPort } = settings.store;
 
-        if (!clientId) {
-            alert("Пожалуйста, укажите Client ID в настройках плагина!");
-            return;
+        // Проверяем, запущен ли OAuth сервер
+        this.checkServerStatus(serverPort).then(isRunning => {
+            if (!isRunning) {
+                console.error("❌ OAuth сервер не запущен! Для авторизации необходимо запустить сервер на порту", serverPort);
+                return;
+            }
+
+            console.log("🔑 Запуск процесса авторизации");
+
+            // Показываем интерфейс для ручного ввода токена
+            this.showManualTokenInput();
+        });
+    },
+
+    showManualTokenInput() {
+        const { serverPort } = settings.store;
+        const authUrl = `http://localhost:${serverPort}/oauth/authorize`;
+
+        // Создаем простой интерфейс для ручного ввода токена
+        const modal = document.createElement("div");
+        modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+            font-family: Arial, sans-serif;
+        `;
+
+        modal.innerHTML = `
+            <div style="
+                background: #36393f;
+                padding: 30px;
+                border-radius: 8px;
+                max-width: 500px;
+                color: white;
+                text-align: center;
+            ">
+                <h3 style="margin-top: 0; color: #ff3333;">🔑 Авторизация Yandex Music</h3>
+                <p>1. Скопируйте ссылку и откройте её в браузере</p>
+                <input type="text" readonly value="${authUrl}" id="authUrl" style="
+                    width: 100%;
+                    padding: 8px;
+                    margin: 5px 0;
+                    border: 1px solid #555;
+                    border-radius: 4px;
+                    background: #2f3136;
+                    color: white;
+                    font-size: 12px;
+                    box-sizing: border-box;
+                ">
+                <button id="copyUrl" style="
+                    background: #5865F2;
+                    color: white;
+                    border: none;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    margin: 5px 0 15px 0;
+                    font-size: 12px;
+                    width: 100%;
+                ">📋 Скопировать ссылку</button>
+                <button id="openUrl" style="
+                    background: #1DB954;
+                    color: white;
+                    border: none;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    margin: 5px 0 15px 0;
+                    font-size: 12px;
+                    width: 100%;
+                ">🌐 Открыть в браузере</button>
+
+                <p>2. После авторизации скопируйте токен и вставьте его сюда:</p>
+                <input type="text" id="tokenInput" placeholder="Вставьте токен здесь..." style="
+                    width: 100%;
+                    padding: 10px;
+                    margin: 10px 0;
+                    border: 1px solid #555;
+                    border-radius: 4px;
+                    background: #2f3136;
+                    color: white;
+                    font-size: 14px;
+                    box-sizing: border-box;
+                ">
+                <div style="margin-top: 20px;">
+                    <button id="submitToken" style="
+                        background: #4CAF50;
+                        color: white;
+                        border: none;
+                        padding: 10px 20px;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        margin-right: 10px;
+                        font-size: 14px;
+                    ">Сохранить токен</button>
+                    <button id="cancelToken" style="
+                        background: #f44336;
+                        color: white;
+                        border: none;
+                        padding: 10px 20px;
+                        border-radius: 4px;
+                        cursor: pointer;
+                        font-size: 14px;
+                    ">Отмена</button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(modal);
+
+        // Обработчики событий
+        const tokenInput = modal.querySelector("#tokenInput") as HTMLInputElement;
+        const submitBtn = modal.querySelector("#submitToken");
+        const cancelBtn = modal.querySelector("#cancelToken");
+        const copyBtn = modal.querySelector("#copyUrl");
+        const openBtn = modal.querySelector("#openUrl");
+        const authUrlInput = modal.querySelector("#authUrl") as HTMLInputElement;
+
+        // Копирование ссылки
+        copyBtn?.addEventListener("click", () => {
+            authUrlInput.select();
+            navigator.clipboard?.writeText(authUrl).then(() => {
+                console.log("📋 Ссылка скопирована в буфер обмена");
+                copyBtn.textContent = "✅ Скопировано!";
+                setTimeout(() => {
+                    copyBtn.textContent = "📋 Скопировать ссылку";
+                }, 2000);
+            }).catch(() => {
+                console.error("❌ Не удалось скопировать ссылку");
+            });
+        });
+
+        // Открытие ссылки в браузере через Discord API
+        openBtn?.addEventListener("click", () => {
+            try {
+                // Используем VencordNative API для открытия внешних ссылок
+                if (VencordNative?.native?.openExternal) {
+                    VencordNative.native.openExternal(authUrl);
+                    console.log("🌐 Ссылка открыта в браузере через VencordNative API");
+                    openBtn.textContent = "✅ Открыто!";
+                    setTimeout(() => {
+                        openBtn.textContent = "🌐 Открыть в браузере";
+                    }, 2000);
+                } else if (window.DiscordNative?.shell?.openExternal) {
+                    // Fallback для старых версий
+                    window.DiscordNative.shell.openExternal(authUrl);
+                    console.log("🌐 Ссылка открыта в браузере через Discord API");
+                    openBtn.textContent = "✅ Открыто!";
+                    setTimeout(() => {
+                        openBtn.textContent = "🌐 Открыть в браузере";
+                    }, 2000);
+                } else if (window.open) {
+                    // Fallback для веб-версии
+                    window.open(authUrl, "_blank");
+                    console.log("🌐 Ссылка открыта в новой вкладке");
+                } else {
+                    console.error("❌ Не удалось открыть ссылку");
+                }
+            } catch (error) {
+                console.error("❌ Ошибка при открытии ссылки:", error);
+            }
+        });
+
+        submitBtn?.addEventListener("click", () => {
+            const token = tokenInput.value.trim();
+            if (token) {
+                this.handleManualToken(token);
+                document.body.removeChild(modal);
+            } else {
+                console.warn("⚠️ Пожалуйста, введите токен!");
+            }
+        });
+
+        cancelBtn?.addEventListener("click", () => {
+            document.body.removeChild(modal);
+        });
+
+        // Фокус на поле копирования ссылки
+        setTimeout(() => authUrlInput.focus(), 100);
+    },
+
+    async handleManualToken(token: string) {
+        console.log("✅ Получен токен вручную");
+
+        try {
+            // Получаем информацию о пользователе через наш сервер
+            const { serverPort } = settings.store;
+            const response = await fetch(`http://localhost:${serverPort}/api/user`, {
+                headers: {
+                    "Authorization": `Bearer ${token}`
+                }
+            });
+
+            if (response.ok) {
+                const userData = await response.json();
+                this.handleOAuthSuccess(token, userData);
+            } else {
+                // Если не удалось получить данные пользователя, используем базовые
+                console.warn("Не удалось получить данные пользователя, используем базовые");
+                const userData = {
+                    login: "user",
+                    real_name: "Пользователь Yandex"
+                };
+                this.handleOAuthSuccess(token, userData);
+            }
+        } catch (error) {
+            console.error("Ошибка при получении данных пользователя:", error);
+
+            // Fallback: используем базовые данные
+            const userData = {
+                login: "user",
+                real_name: "Пользователь Yandex"
+            };
+            this.handleOAuthSuccess(token, userData);
         }
+    },
 
-        // Добавляем параметр force_confirm=yes для тестирования
-        const authUrl = `https://oauth.yandex.ru/authorize?response_type=token&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&force_confirm=yes`;
-        console.log("Opening auth URL:", authUrl);
-
-        // Открываем окно авторизации
-        window.open(
-            authUrl,
-            "yandexAuth",
-            "width=600,height=700"
-        );
+    async checkServerStatus(port: number): Promise<boolean> {
+        try {
+            const response = await fetch(`http://localhost:${port}/`, {
+                method: "HEAD",
+                mode: "no-cors"
+            });
+            return true;
+        } catch (error) {
+            try {
+                // Пытаемся другим способом
+                const response = await fetch(`http://localhost:${port}/`);
+                return response.ok;
+            } catch (secondError) {
+                console.log("OAuth сервер недоступен:", secondError);
+                return false;
+            }
+        }
     },
 
     stop() {
